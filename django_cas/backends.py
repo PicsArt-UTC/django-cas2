@@ -21,7 +21,7 @@ class CASBackend(ModelBackend):
     def authenticate(self, ticket, service):
         """ Verifies CAS ticket and gets or creates User object """
 
-        (username, proxies) = self._verify(ticket, service)
+        (username, email, first_name, last_name, proxies) = self._verify(ticket, service)
         if not username:
             return None
         
@@ -37,7 +37,11 @@ class CASBackend(ModelBackend):
         except User.DoesNotExist:
             if settings.CAS_AUTO_CREATE_USERS:
                 logger.debug("User '%s' auto created by CAS backend", username)
-                return User.objects.create_user(username)
+                new_user = User.objects.create_user(username)
+                new_user.first_name = first_name
+                new_user.last_name = last_name
+                new_user.email = email
+                new_user.save()
             else:
                 logger.error("Failed authentication, user '%s' does not exist", username)
 
@@ -63,8 +67,11 @@ class CASBackend(ModelBackend):
                 logger.warn("Authentication failed from CAS server: %s", 
                             response.getElementsByTagName('cas:authenticationFailure')[0].firstChild.nodeValue)
                 return (None, None)
-    
+
             username = response.getElementsByTagName('cas:user')[0].firstChild.nodeValue
+            email = response.getElementsByTagName('cas:mail')[0].firstChild.nodeValue
+            first_name = response.getElementsByTagName('cas:givenName')[0].firstChild.nodeValue
+            last_name = response.getElementsByTagName('cas:sn')[0].firstChild.nodeValue
             proxies = []
             if response.getElementsByTagName('cas:proxyGrantingTicket'):
                 proxies = [p.firstChild.nodeValue for p in response.getElementsByTagName('cas:proxies')]
@@ -82,7 +89,7 @@ class CASBackend(ModelBackend):
                     logger.error("Failed to do proxy authentication.", exc_info=True)
     
             logger.debug("Cas proxy authentication succeeded for %s with proxies %s", username, proxies)
-            return (username, proxies)
+            return (username, email, first_name, last_name, proxies)
         except Exception as e:
             logger.error("Failed to verify CAS authentication", e)
             return (None, None)
